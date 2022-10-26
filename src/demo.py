@@ -1,40 +1,26 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import typing
+
 import logging
 from direct.showbase.ShowBase import ShowBase
-from panda3d.core import (
-    loadPrcFileData,
-    Vec3,
-    Point3,
-    DirectionalLight,
-    VBase4,
-    AmbientLight,
-    CollisionTraverser,
-    CollisionPlane,
-    CollisionBox,
-    CollisionNode,
-    Plane,
-    BitMask32,
 
-    # For building Bullet collision geometry
-    Geom,
-    GeomTriangles,
-    GeomVertexFormat,
-    GeomVertexData,
-    GeomVertexWriter)
-from panda3d.bullet import (
-    BulletWorld,
-    BulletDebugNode,
-    BulletPlaneShape,
-    BulletBoxShape,
-    BulletRigidBodyNode,
-    BulletGhostNode,
-    BulletTriangleMesh,
-    BulletTriangleMeshShape,
-    BulletHelper)
+from panda3d import core, bullet
+
 from panda3d.physics import ForceNode, LinearVectorForce
 from direct.interval.IntervalGlobal import Sequence, Wait
+
+loader: typing.Any
+base: typing.Any
+taskMgr: typing.Any
+render: typing.Any
+globalClock: typing.Any
+
+import model
+
+# trigger the lazy evaluation, as further the paths are read from config.json
+model.fox.path
 
 # The necessary import to run the Extended Character Controller
 from characterController.PlayerController import PlayerController
@@ -58,18 +44,18 @@ logging.basicConfig(
     filemode="w")
 
 
-loadPrcFileData("","""
+core.loadPrcFileData("","""
 show-frame-rate-meter #t
 model-path $MAIN_DIR/testmodel
 cursor-hidden 1
 on-screen-debug-enabled #f
-want-pstats #f
+# want-pstats true
 want-tk #f
 fullscreen #f
 #win-size 1920 1080
 win-size 1080 720
 #win-size 840 720
-frame-rate-meter-milliseconds #t
+# sync-video false
 """)
 
 class Main(ShowBase):
@@ -95,26 +81,60 @@ class Main(ShowBase):
         self.useInternal = USEINTERNAL
         self.debugactive = True
 
-        # Comment this line out if the demo runs slow on your system
-        render.setShaderAuto(True)
+        try:
+            import simplepbr
+
+            sky_color = core.Vec4F(135/255 * 1.2, 206/255, 235/255, 1) 
+            self.setBackgroundColor(sky_color * 2)
+
+            pipeline = simplepbr.init()
+            pipeline.use_emission_maps = False
+            pipeline.enable_shadows = True
+            pipeline.use_normal_maps = True
+            pipeline.use_occlusion_maps = True
+            pipeline.exposure = 0.5
+
+            sun = core.DirectionalLight("directionalLight")
+            sun.setColor(core.Vec4F(1, 1, 1, 1) * 11)
+            sun.get_lens().set_near_far(-50, 50)
+            sun.get_lens().set_film_size(50, 50)
+            sun.setScene(self.render)
+            sun.set_shadow_caster(True, 4096, 4096)
+
+            self.sun_light = self.render.attachNewNode(sun)
+            self.render.setLight(self.sun_light)
+            self.sun_light.set_hpr(45, -45, 0)
+
+            sky_light = core.AmbientLight("Ambient")
+            sky_light.setColor(sky_color * 0.4)
+
+            self.sky_light = self.render.attachNewNode(sky_light)
+            self.render.setLight(self.sky_light)
+
+        except:
+            print('No simplepbr')
+
+            alight = core.AmbientLight("Ambient")
+            alight.setColor(core.VBase4(0.5, 0.5, 0.5, 1))
+            alnp = render.attachNewNode(alight)
+            render.setLight(alnp)
+
+            sun = core.DirectionalLight("Sun")
+            sun.setColor(core.VBase4(1.5, 1.5, 1.0, 1))
+            sunnp = render.attachNewNode(sun)
+            sunnp.setHpr(10, -60, 0)
+            render.setLight(sunnp)
+
+            # Comment this line out if the demo runs slow on your system
+            self.render.set_shader_auto()
 
         #
         # SIMPLE LEVEL SETUP
         #
-        self.level = loader.loadModel("../data/level/level")
+
+        self.level: core.NodePath = loader.loadModel(model.level.path)
         self.level.reparentTo(render)
-        #
-        # Lights
-        #
-        alight = AmbientLight("Ambient")
-        alight.setColor(VBase4(0.5, 0.5, 0.5, 1))
-        alnp = render.attachNewNode(alight)
-        render.setLight(alnp)
-        sun = DirectionalLight("Sun")
-        sun.setColor(VBase4(1.5, 1.5, 1.0, 1))
-        sunnp = render.attachNewNode(sun)
-        sunnp.setHpr(10, -60, 0)
-        render.setLight(sunnp)
+
         #
         # LEVEL SETUP END
         #
@@ -126,46 +146,46 @@ class Main(ShowBase):
         # BULLET
         #
         if self.useBullet:
-            self.world = BulletWorld()
-            self.world.setGravity(Vec3(0, 0, -9.81))
+            self.world = bullet.BulletWorld()
+            self.world.setGravity(core.Vec3(0, 0, -9.81))
 
-            shape = BulletPlaneShape(Vec3(0, 0, 1), 1)
-            node = BulletRigidBodyNode("Ground")
+            shape = bullet.BulletPlaneShape(core.Vec3(0, 0, 1), 1)
+            node = bullet.BulletRigidBodyNode("Ground")
             node.addShape(shape)
-            node.setIntoCollideMask(BitMask32.allOn())
+            node.setIntoCollideMask(core.BitMask32.allOn())
             np = render.attachNewNode(node)
             np.setPos(0, 0, -4)
             self.world.attachRigidBody(node)
 
-            self.levelSolids = BulletHelper.fromCollisionSolids(self.level, True)
+            self.levelSolids = bullet.BulletHelper.fromCollisionSolids(self.level, True)
             for bodyNP in self.levelSolids:
                 bodyNP.reparentTo(self.level)
                 bodyNP.node().setDebugEnabled(False)
-                if isinstance(bodyNP.node(), BulletRigidBodyNode):
+                if isinstance(bodyNP.node(), bullet.BulletRigidBodyNode):
                     bodyNP.node().setMass(0.0)
                     self.world.attachRigidBody(bodyNP.node())
-                elif isinstance(bodyNP.node(), BulletGhostNode):
+                elif isinstance(bodyNP.node(), bullet.BulletGhostNode):
                     self.world.attachGhost(bodyNP.node())
 
 
             # Intangible blocks (as used for example for collectible or event spheres)
-            self.moveThroughBoxes = render.attachNewNode(BulletGhostNode("Ghosts"))
+            self.moveThroughBoxes = render.attachNewNode(bullet.BulletGhostNode("Ghosts"))
             self.moveThroughBoxes.setPos(0, 0, 1)
-            box = BulletBoxShape((1, 1, 1))
+            box = bullet.BulletBoxShape((1, 1, 1))
             self.moveThroughBoxes.node().addShape(box)
             # should only collide with the event sphere of the character
-            self.moveThroughBoxes.node().setIntoCollideMask(BitMask32(0x80))  # 1000 0000
+            self.moveThroughBoxes.node().setIntoCollideMask(core.BitMask32(0x80))  # 1000 0000
             self.world.attachGhost(self.moveThroughBoxes.node())
 
 
 
             # Intangible blocks (as used for example for collectible or event spheres)
-            self.collideBox = render.attachNewNode(BulletRigidBodyNode("Ghosts"))
+            self.collideBox = render.attachNewNode(bullet.BulletRigidBodyNode("Ghosts"))
             self.collideBox.setPos(0, 2.5, 1)
-            box = BulletBoxShape((1, 1, 1))
+            box = bullet.BulletBoxShape((1, 1, 1))
             self.collideBox.node().addShape(box)
             # should only collide with the event sphere of the character
-            #self.collideBox.node().setIntoCollideMask(BitMask32(0x80))  # 1000 0000
+            #self.collideBox.node().setIntoCollideMask(core.BitMask32(0x80))  # 1000 0000
             self.world.attachRigidBody(self.collideBox.node())
 
 
@@ -175,7 +195,7 @@ class Main(ShowBase):
 
             # show the debug geometry for bullet collisions
             self.debugactive = True
-            debugNode = BulletDebugNode("Debug")
+            debugNode = bullet.BulletDebugNode("Debug")
             debugNode.showWireframe(True)
             debugNode.showConstraints(True)
             debugNode.showBoundingBoxes(False)
@@ -192,7 +212,7 @@ class Main(ShowBase):
         if self.useInternal:
             # enable physics
             base.enableParticles()
-            base.cTrav = CollisionTraverser("base collision traverser")
+            base.cTrav = core.CollisionTraverser("base collision traverser")
             base.cTrav.setRespectPrevTransform(True)
 
             # setup default gravity
@@ -203,8 +223,8 @@ class Main(ShowBase):
             base.physicsMgr.addLinearForce(gravityForce)
 
             # Ground Plane
-            plane = CollisionPlane(Plane(Vec3(0, 0, 1), Point3(0, 0, -4)))
-            self.ground = render.attachNewNode(CollisionNode("Ground"))
+            plane = core.CollisionPlane(core.Plane(core.Vec3(0, 0, 1), core.Point3(0, 0, -4)))
+            self.ground = render.attachNewNode(core.CollisionNode("Ground"))
             self.ground.node().addSolid(plane)
             self.ground.show()
 
@@ -223,13 +243,13 @@ class Main(ShowBase):
                 ival.loop()
 
             # Intangible blocks (as used for example for collectible or event spheres)
-            self.moveThroughBoxes = render.attachNewNode(CollisionNode("Ghosts"))
-            box = CollisionBox((0, 0, 0.5), 1, 1, 1)
+            self.moveThroughBoxes = render.attachNewNode(core.CollisionNode("Ghosts"))
+            box = core.CollisionBox((0, 0, 0.5), 1, 1, 1)
             box.setTangible(False)
             self.moveThroughBoxes.node().addSolid(box)
             # should only collide with the event sphere of the character
-            self.moveThroughBoxes.node().setFromCollideMask(BitMask32.allOff())
-            self.moveThroughBoxes.node().setIntoCollideMask(BitMask32(0x80))  # 1000 0000
+            self.moveThroughBoxes.node().setFromCollideMask(core.BitMask32.allOff())
+            self.moveThroughBoxes.node().setIntoCollideMask(core.BitMask32(0x80))  # 1000 0000
             self.moveThroughBoxes.show()
 
             self.accept("CharacterCollisions-in-Ghosts", print, ["ENTER"])
@@ -266,7 +286,7 @@ class Main(ShowBase):
         #
         # THE CHARACTER
         #
-        self.playerController = PlayerController(self.world, "../data/config.json")
+        self.playerController = PlayerController(self.world, model.get_path("../data/config.json"))
         self.playerController.startPlayer()
         # find the start position for the character
         startpos = self.level.find("**/StartPos").getPos()
@@ -282,6 +302,12 @@ class Main(ShowBase):
         self.pause = False
 
         self.playerController.camera_handler.centerCamera()
+
+        self.render.subdivideCollisions(4)
+
+        if hasattr(self, 'sun_light'):
+            self.sun_light.reparent_to(self.playerController)
+            self.sun_light.set_compass(self.render)
 
         # This function should be called whenever the player isn't
         # needed anymore like at an application quit method.
@@ -409,9 +435,10 @@ class Main(ShowBase):
         self.world.doPhysics(dt, 10, 1.0/180.0)
         return task.cont
 
-    def addFloatingPlatform(self, platformID, time, platformStartPos, platformEndPos, platformStartHpr=0, platformEndHpr=0):
+    def addFloatingPlatform(self, platformID, time, platformStartPos, platformEndPos, platformStartHpr=0, platformEndHpr=0, model_path = model.floating_platform.path):
         # load and place the platform
-        floatingPlatform = loader.loadModel("../data/level/FloatingPlatform")
+        # "../data/level/FloatingPlatform"
+        floatingPlatform = loader.loadModel(model_path)
         floatingPlatform.setName(floatingPlatform.getName()+str(platformID))
         floatingPlatform.setPos(platformStartPos)
         floatingPlatform.setH(platformStartHpr)
@@ -441,5 +468,6 @@ class Main(ShowBase):
         if platformHprInterval is not None:
             self.platformIntervals.append(platformHprInterval)
 
-APP = Main()
-APP.run()
+if __name__ == '__main__':
+    APP = Main()
+    APP.run()
