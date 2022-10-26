@@ -1,9 +1,9 @@
-# panda3d-character-controller
+# `blend_converter` test
 
-This project aims to become a sophisticated and fully featured character controller for 3D games, simulations and other applications that could make use of such.
+this repo is a test project for [unwave/blend_converter](https://github.com/unwave/blend_converter)
 
-The main code can be found in the **/src** directory which also includes a Readme with furhter instructions on how to run and install the library. A demo script is also available to showcase the controllers abilities and usage.
+install dependencies with `pip install -r requirements.txt`
 
-In the **/doc** folder you can find further information on its usage and configuration. Ther also is a folder containing the demos model blender source files and other assets.
+see `src/model.py` and `src/import_scripts.py`
 
-The **/data** folder contains samples for the character, level and configuration files.
+![A screenshot of the project](data/221027_014244_python_Panda.png "level and character")

@@ -1,0 +1,2 @@
+panda3d-simplepbr
+git+https://github.com/unwave/blend_converter

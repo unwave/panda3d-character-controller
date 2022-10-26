@@ -19,12 +19,12 @@ def filter_func(entry: os.DirEntry):
             
     elif entry.is_file():
 
-        if entry.name in {'.gitignore', 'README.md', 'setup.py', 'LICENSE', 'demo.log'}:
-            return False
-            
-        if str(entry.name).endswith(('.blend1', '.blend_1', '.blend1_prev')):
+        if entry.name in {'.gitignore', 'setup.py', 'LICENSE', 'demo.log'}:
             return False
 
+        if '.blend' in entry.name and not str(entry.name).endswith('.blend'):
+            return False
+            
     else:
         raise BaseException('Is this possible?')
 
